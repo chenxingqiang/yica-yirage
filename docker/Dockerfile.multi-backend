@@ -1,0 +1,306 @@
+# YiRage Multi-Backend Docker Image
+# Copyright 2025-2026 YICA TEAM
+
+# Use Ubuntu 22.04 as base image
+FROM nvidia/cuda:12.2-devel-ubuntu22.04
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV YIRAGE_HOME=/workspace/yirage
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    # Build tools
+    build-essential \
+    cmake \
+    ninja-build \
+    git \
+    wget \
+    curl \
+    # Python
+    python3 \
+    python3-pip \
+    python3-dev \
+    # OpenMP and BLAS for CPU backend
+    libomp-dev \
+    libopenblas-dev \
+    liblapack-dev \
+    # Additional utilities
+    htop \
+    vim \
+    tmux \
+    # Clean up
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+RUN pip3 install --upgrade pip setuptools wheel
+
+# Install PyTorch (CPU + CUDA support)
+RUN pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# Install additional Python packages
+RUN pip3 install \
+    numpy \
+    scipy \
+    cython \
+    psutil \
+    matplotlib \
+    jupyter \
+    ipython \
+    tqdm \
+    transformers \
+    accelerate \
+    datasets \
+    # Development tools
+    black \
+    flake8 \
+    pytest \
+    # Profiling tools
+    py-spy \
+    memory_profiler
+
+# Set working directory
+WORKDIR /workspace
+
+# Copy YiRage source code
+COPY . yirage/
+
+# Set YiRage home
+WORKDIR $YIRAGE_HOME
+
+# Build YiRage with multi-backend support
+RUN mkdir -p build && cd build && \
+    cmake -DCMAKE_BUILD_TYPE=Release \
+          -DYIRAGE_USE_CUDA=ON \
+          -DYIRAGE_USE_CPU=ON \
+          -DYIRAGE_USE_MPS=OFF \
+          -DCUDA_ARCHITECTURES="70;75;80;86;89;90" \
+          -GNinja \
+          .. && \
+    ninja -j$(nproc)
+
+# Install YiRage Python package
+RUN pip3 install -e . -v
+
+# Set up environment
+ENV PYTHONPATH="${YIRAGE_HOME}/python:${PYTHONPATH}"
+ENV PATH="${YIRAGE_HOME}/tools:${PATH}"
+
+# Create directories for data and results
+RUN mkdir -p /workspace/data /workspace/results /workspace/configs
+
+# Copy configuration templates
+COPY configs/ /workspace/configs/
+
+# Set up Jupyter configuration
+RUN jupyter --generate-config
+RUN echo "c.NotebookApp.ip = '0.0.0.0'" >> ~/.jupyter/jupyter_notebook_config.py
+RUN echo "c.NotebookApp.port = 8888" >> ~/.jupyter/jupyter_notebook_config.py
+RUN echo "c.NotebookApp.token = ''" >> ~/.jupyter/jupyter_notebook_config.py
+RUN echo "c.NotebookApp.password = ''" >> ~/.jupyter/jupyter_notebook_config.py
+
+# Create startup script
+RUN cat > /workspace/start.sh << 'EOF'
+#!/bin/bash
+set -e
+
+echo "YiRage Multi-Backend Docker Environment"
+echo "======================================"
+
+# Show system information
+echo "System Information:"
+echo "  OS: $(lsb_release -d | cut -f2)"
+echo "  CPU: $(nproc) cores"
+echo "  Memory: $(free -h | awk '/^Mem:/ {print $2}')"
+
+# Check CUDA
+if command -v nvidia-smi &> /dev/null; then
+    echo "  CUDA: $(nvidia-smi --query-gpu=driver_version --format=csv,noheader,nounits | head -1)"
+    nvidia-smi -L
+else
+    echo "  CUDA: Not available"
+fi
+
+echo
+
+# Test YiRage installation
+echo "Testing YiRage installation..."
+python3 -c "import yirage as yr; print('✓ YiRage imported successfully')"
+
+# Show available backends
+python3 -c "
+import yirage as yr
+try:
+    backends = yr.get_available_backends()
+    print(f'✓ Available backends: {[b.value for b in backends]}')
+except Exception as e:
+    print(f'Warning: {e}')
+"
+
+echo
+echo "YiRage environment is ready!"
+echo
+echo "Available commands:"
+echo "  yirage_backend_manager.py info    - Show system information"
+echo "  yirage_backend_manager.py test    - Test backends"
+echo "  jupyter notebook --allow-root     - Start Jupyter"
+echo
+echo "Example directories:"
+echo "  /workspace/yirage/examples/       - Example scripts"
+echo "  /workspace/yirage/demo/           - Demo scripts"
+echo "  /workspace/yirage/benchmark/      - Benchmark tools"
+echo "  /workspace/configs/               - Configuration templates"
+echo
+
+# Execute provided command or start bash
+if [ $# -eq 0 ]; then
+    exec /bin/bash
+else
+    exec "$@"
+fi
+EOF
+
+RUN chmod +x /workspace/start.sh
+
+# Create example notebook
+RUN cat > /workspace/yirage_multi_backend_demo.ipynb << 'EOF'
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# YiRage Multi-Backend Demo\n",
+    "\n",
+    "This notebook demonstrates YiRage's multi-backend capabilities."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import yirage as yr\n",
+    "import torch\n",
+    "import time\n",
+    "\n",
+    "print(\"YiRage Multi-Backend Demo\")\n",
+    "print(\"=\" * 30)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Check available backends\n",
+    "available = yr.get_available_backends()\n",
+    "print(f\"Available backends: {[b.value for b in available]}\")\n",
+    "\n",
+    "# Get system information\n",
+    "if hasattr(yr, 'BackendOptimizer'):\n",
+    "    optimizer = yr.BackendOptimizer()\n",
+    "    optimizer.print_system_info()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Test different backends\n",
+    "def test_backend(backend_name):\n",
+    "    try:\n",
+    "        yr.set_backend(backend_name)\n",
+    "        \n",
+    "        # Create test tensors\n",
+    "        device = 'cuda' if backend_name == 'cuda' else 'cpu'\n",
+    "        a = torch.randn(1000, 1000, device=device)\n",
+    "        b = torch.randn(1000, 1000, device=device)\n",
+    "        \n",
+    "        # Benchmark matrix multiplication\n",
+    "        start_time = time.time()\n",
+    "        for _ in range(10):\n",
+    "            c = torch.matmul(a, b)\n",
+    "            if device == 'cuda':\n",
+    "                torch.cuda.synchronize()\n",
+    "        end_time = time.time()\n",
+    "        \n",
+    "        avg_time = (end_time - start_time) / 10 * 1000  # ms\n",
+    "        print(f\"{backend_name.upper()}: {avg_time:.2f} ms\")\n",
+    "        \n",
+    "        return avg_time\n",
+    "        \n",
+    "    except Exception as e:\n",
+    "        print(f\"{backend_name.upper()}: Error - {e}\")\n",
+    "        return float('inf')\n",
+    "\n",
+    "# Test all available backends\n",
+    "results = {}\n",
+    "for backend in available:\n",
+    "    backend_name = backend.value\n",
+    "    results[backend_name] = test_backend(backend_name)\n",
+    "\n",
+    "# Show results\n",
+    "print(\"\\nPerformance Results:\")\n",
+    "sorted_results = sorted(results.items(), key=lambda x: x[1])\n",
+    "for backend, time_ms in sorted_results:\n",
+    "    if time_ms != float('inf'):\n",
+    "        print(f\"{backend.upper()}: {time_ms:.2f} ms\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Create a simple kernel graph\n",
+    "try:\n",
+    "    # Use the best performing backend\n",
+    "    best_backend = min(results, key=results.get)\n",
+    "    yr.set_backend(best_backend)\n",
+    "    \n",
+    "    print(f\"Creating kernel graph with {best_backend} backend...\")\n",
+    "    graph = yr.new_kernel_graph(backend=best_backend)\n",
+    "    print(\"✓ Kernel graph created successfully\")\n",
+    "    \n",
+    "except Exception as e:\n",
+    "    print(f\"Error creating kernel graph: {e}\")"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.10.12"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 4
+}
+EOF
+
+# Expose ports
+EXPOSE 8888 6006
+
+# Set entrypoint
+ENTRYPOINT ["/workspace/start.sh"]
+CMD []

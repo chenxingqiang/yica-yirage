@@ -33,6 +33,21 @@ from .backend_config import (
     reset_backend
 )
 
+# Utility functions for backend management
+try:
+    from .utils.backend_utils import (
+        auto_configure_backend,
+        benchmark_backends,
+        get_memory_info,
+        BackendOptimizer
+    )
+except ImportError:
+    # Gracefully handle missing dependencies
+    auto_configure_backend = None
+    benchmark_backends = None
+    get_memory_info = None
+    BackendOptimizer = None
+
 
 class InputNotFoundError(Exception):
     """Raised when cannot find input tensors"""

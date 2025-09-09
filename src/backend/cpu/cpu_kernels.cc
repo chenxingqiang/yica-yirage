@@ -39,15 +39,15 @@ void CpuKernelInterface::matmul(void* output, const void* a, const void* b,
                                const MatmulConfig& config, yirage::type::DataType dtype) {
     // Simple CPU matrix multiplication implementation
     // This is a basic implementation - in production, you'd use optimized BLAS
-    
+
     if (dtype == yirage::type::DT_FLOAT16) {
         // For half precision, we'll convert to float for computation
         const auto* a_ptr = static_cast<const uint16_t*>(a);
         const auto* b_ptr = static_cast<const uint16_t*>(b);
         auto* out_ptr = static_cast<uint16_t*>(output);
-        
+
         int m = config.m, n = config.n, k = config.k;
-        
+
         #pragma omp parallel for collapse(2)
         for (int i = 0; i < m; ++i) {
             for (int j = 0; j < n; ++j) {
@@ -66,9 +66,9 @@ void CpuKernelInterface::matmul(void* output, const void* a, const void* b,
         const auto* a_ptr = static_cast<const float*>(a);
         const auto* b_ptr = static_cast<const float*>(b);
         auto* out_ptr = static_cast<float*>(output);
-        
+
         int m = config.m, n = config.n, k = config.k;
-        
+
         #pragma omp parallel for collapse(2)
         for (int i = 0; i < m; ++i) {
             for (int j = 0; j < n; ++j) {
@@ -85,19 +85,19 @@ void CpuKernelInterface::matmul(void* output, const void* a, const void* b,
 }
 
 void CpuKernelInterface::element_wise_unary(void* output, const void* input,
-                                          yirage::type::KNOperatorType op_type, 
+                                          yirage::type::KNOperatorType op_type,
                                           int num_elements,
                                           yirage::type::DataType dtype,
                                           void* stream) {
     if (dtype == yirage::type::DT_FLOAT16) {
         const auto* in_ptr = static_cast<const uint16_t*>(input);
         auto* out_ptr = static_cast<uint16_t*>(output);
-        
+
         #pragma omp parallel for
         for (int i = 0; i < num_elements; ++i) {
             float val = half_to_float(in_ptr[i]);
             float result;
-            
+
             switch (op_type) {
                 case yirage::type::KN_EXP_OP:
                     result = std::exp(val);
@@ -117,18 +117,18 @@ void CpuKernelInterface::element_wise_unary(void* output, const void* input,
                 default:
                     throw std::runtime_error("Unsupported unary operation");
             }
-            
+
             out_ptr[i] = float_to_half(result);
         }
     } else if (dtype == yirage::type::DT_FLOAT32) {
         const auto* in_ptr = static_cast<const float*>(input);
         auto* out_ptr = static_cast<float*>(output);
-        
+
         #pragma omp parallel for
         for (int i = 0; i < num_elements; ++i) {
             float val = in_ptr[i];
             float result;
-            
+
             switch (op_type) {
                 case yirage::type::KN_EXP_OP:
                     result = std::exp(val);
@@ -148,7 +148,7 @@ void CpuKernelInterface::element_wise_unary(void* output, const void* input,
                 default:
                     throw std::runtime_error("Unsupported unary operation");
             }
-            
+
             out_ptr[i] = result;
         }
     } else {
@@ -164,7 +164,7 @@ void CpuKernelInterface::rms_norm(void* output, const void* input, const void* w
         const auto* in_ptr = static_cast<const uint16_t*>(input);
         const auto* w_ptr = static_cast<const uint16_t*>(weight);
         auto* out_ptr = static_cast<uint16_t*>(output);
-        
+
         #pragma omp parallel for
         for (int b = 0; b < batch_size; ++b) {
             // Compute RMS
@@ -174,7 +174,7 @@ void CpuKernelInterface::rms_norm(void* output, const void* input, const void* w
                 sum_squares += val * val;
             }
             float rms = std::sqrt(sum_squares / hidden_size + eps);
-            
+
             // Apply normalization and weight
             for (int h = 0; h < hidden_size; ++h) {
                 float val = half_to_float(in_ptr[b * hidden_size + h]);
@@ -187,7 +187,7 @@ void CpuKernelInterface::rms_norm(void* output, const void* input, const void* w
         const auto* in_ptr = static_cast<const float*>(input);
         const auto* w_ptr = static_cast<const float*>(weight);
         auto* out_ptr = static_cast<float*>(output);
-        
+
         #pragma omp parallel for
         for (int b = 0; b < batch_size; ++b) {
             // Compute RMS
@@ -197,7 +197,7 @@ void CpuKernelInterface::rms_norm(void* output, const void* input, const void* w
                 sum_squares += val * val;
             }
             float rms = std::sqrt(sum_squares / hidden_size + eps);
-            
+
             // Apply normalization and weight
             for (int h = 0; h < hidden_size; ++h) {
                 float val = in_ptr[b * hidden_size + h];
@@ -212,7 +212,7 @@ void CpuKernelInterface::rms_norm(void* output, const void* input, const void* w
 
 // Placeholder implementations for other methods
 void CpuKernelInterface::element_wise_binary(void* output, const void* a, const void* b,
-                                           yirage::type::KNOperatorType op_type, 
+                                           yirage::type::KNOperatorType op_type,
                                            int num_elements,
                                            yirage::type::DataType dtype,
                                            void* stream) {
@@ -220,13 +220,13 @@ void CpuKernelInterface::element_wise_binary(void* output, const void* a, const 
         const auto* a_ptr = static_cast<const uint16_t*>(a);
         const auto* b_ptr = static_cast<const uint16_t*>(b);
         auto* out_ptr = static_cast<uint16_t*>(output);
-        
+
         #pragma omp parallel for
         for (int i = 0; i < num_elements; ++i) {
             float a_val = half_to_float(a_ptr[i]);
             float b_val = half_to_float(b_ptr[i]);
             float result;
-            
+
             switch (op_type) {
                 case yirage::type::KN_ADD_OP:
                     result = a_val + b_val;
@@ -243,20 +243,20 @@ void CpuKernelInterface::element_wise_binary(void* output, const void* a, const 
                 default:
                     throw std::runtime_error("Unsupported binary operation");
             }
-            
+
             out_ptr[i] = float_to_half(result);
         }
     } else if (dtype == yirage::type::DT_FLOAT32) {
         const auto* a_ptr = static_cast<const float*>(a);
         const auto* b_ptr = static_cast<const float*>(b);
         auto* out_ptr = static_cast<float*>(output);
-        
+
         #pragma omp parallel for
         for (int i = 0; i < num_elements; ++i) {
             float a_val = a_ptr[i];
             float b_val = b_ptr[i];
             float result;
-            
+
             switch (op_type) {
                 case yirage::type::KN_ADD_OP:
                     result = a_val + b_val;
@@ -273,7 +273,7 @@ void CpuKernelInterface::element_wise_binary(void* output, const void* a, const 
                 default:
                     throw std::runtime_error("Unsupported binary operation");
             }
-            
+
             out_ptr[i] = result;
         }
     } else {
@@ -282,7 +282,7 @@ void CpuKernelInterface::element_wise_binary(void* output, const void* a, const 
 }
 
 void CpuKernelInterface::reduction(void* output, const void* input,
-                                 yirage::type::KNOperatorType reduction_type, 
+                                 yirage::type::KNOperatorType reduction_type,
                                  const std::vector<int>& input_dims,
                                  const std::vector<int>& reduce_dims,
                                  yirage::type::DataType dtype,
@@ -291,7 +291,7 @@ void CpuKernelInterface::reduction(void* output, const void* input,
     throw std::runtime_error("CPU reduction operations not yet implemented");
 }
 
-void CpuKernelInterface::layer_norm(void* output, const void* input, 
+void CpuKernelInterface::layer_norm(void* output, const void* input,
                                   const void* weight, const void* bias,
                                   int batch_size, int hidden_size, float eps,
                                   yirage::type::DataType dtype,
@@ -331,9 +331,9 @@ void CpuKernelInterface::fill(void* ptr, int value, size_t size, void* stream) {
     std::memset(ptr, value, size);
 }
 
-void CpuKernelInterface::embedding_lookup(void* output, const void* input, 
+void CpuKernelInterface::embedding_lookup(void* output, const void* input,
                                         const void* weight,
-                                        int batch_size, int seq_length, 
+                                        int batch_size, int seq_length,
                                         int vocab_size, int hidden_size,
                                         yirage::type::DataType dtype,
                                         void* stream) {
@@ -346,15 +346,15 @@ void CpuKernelInterface::argmax(void* output, const void* input,
                                yirage::type::DataType input_dtype,
                                void* stream) {
     auto* out_ptr = static_cast<int64_t*>(output);
-    
+
     if (input_dtype == yirage::type::DT_FLOAT16) {
         const auto* in_ptr = static_cast<const uint16_t*>(input);
-        
+
         #pragma omp parallel for
         for (int b = 0; b < batch_size; ++b) {
             int64_t max_idx = 0;
             float max_val = half_to_float(in_ptr[b * vocab_size]);
-            
+
             for (int v = 1; v < vocab_size; ++v) {
                 float val = half_to_float(in_ptr[b * vocab_size + v]);
                 if (val > max_val) {
@@ -362,17 +362,17 @@ void CpuKernelInterface::argmax(void* output, const void* input,
                     max_idx = v;
                 }
             }
-            
+
             out_ptr[b] = max_idx;
         }
     } else if (input_dtype == yirage::type::DT_FLOAT32) {
         const auto* in_ptr = static_cast<const float*>(input);
-        
+
         #pragma omp parallel for
         for (int b = 0; b < batch_size; ++b) {
             int64_t max_idx = 0;
             float max_val = in_ptr[b * vocab_size];
-            
+
             for (int v = 1; v < vocab_size; ++v) {
                 float val = in_ptr[b * vocab_size + v];
                 if (val > max_val) {
@@ -380,7 +380,7 @@ void CpuKernelInterface::argmax(void* output, const void* input,
                     max_idx = v;
                 }
             }
-            
+
             out_ptr[b] = max_idx;
         }
     } else {
@@ -397,7 +397,7 @@ void CpuKernelInterface::rms_norm_linear(void* output, const void* input,
     throw std::runtime_error("CPU RMS norm linear not yet implemented");
 }
 
-void CpuKernelInterface::silu_mul_linear(void* output, const void* gate_input, 
+void CpuKernelInterface::silu_mul_linear(void* output, const void* gate_input,
                                        const void* up_input, const void* linear_weight,
                                        int batch_size, int hidden_size, int intermediate_size,
                                        yirage::type::DataType dtype,
@@ -418,10 +418,10 @@ uint16_t float_to_half(float f) {
     int s = (i >> 31) & 0x1;
     int e = ((i >> 23) & 0xff) - 127 + 15;
     int m = i & 0x7fffff;
-    
+
     if (e <= 0) return s << 15;
     if (e >= 31) return (s << 15) | 0x7c00;
-    
+
     return (s << 15) | (e << 10) | (m >> 13);
 }
 
@@ -430,26 +430,26 @@ float half_to_float(uint16_t h) {
     int s = (h >> 15) & 0x1;
     int e = (h >> 10) & 0x1f;
     int m = h & 0x3ff;
-    
+
     if (e == 0) {
         if (m == 0) return s ? -0.0f : 0.0f;
         // Denormalized
         float f = m / 1024.0f;
         return s ? -f : f;
     }
-    
+
     if (e == 31) {
         if (m == 0) return s ? -INFINITY : INFINITY;
         return NAN;
     }
-    
+
     float f = (1.0f + m / 1024.0f) * std::pow(2.0f, e - 15);
     return s ? -f : f;
 }
 
 // Kernel dispatcher implementation
 void CpuKernelDispatcher::execute(const std::string& kernel_name,
-                                void** inputs, 
+                                void** inputs,
                                 void** outputs,
                                 const KernelConfig& config,
                                 const std::vector<size_t>& input_sizes,

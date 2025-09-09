@@ -1,0 +1,52 @@
+name: Quick Multi-Backend Test
+
+on:
+  push:
+    branches: [ main, develop, feature/* ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  quick-test:
+    name: Quick Test (${{ matrix.backend }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [cpu]
+        python-version: ["3.9", "3.10", "3.11"]
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake ninja-build libomp-dev libopenblas-dev
+        python -m pip install --upgrade pip
+        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+        pip install numpy scipy cython pytest
+
+    - name: Quick build
+      run: |
+        mkdir build && cd build
+        cmake -DYIRAGE_USE_CPU=ON -DYIRAGE_USE_CUDA=OFF -DYIRAGE_USE_MPS=OFF -GNinja ..
+        ninja -j2  # Limit parallelism for faster builds
+
+    - name: Install package
+      run: pip install -e .
+
+    - name: Quick test
+      run: |
+        python -c "import yirage as yr; yr.set_backend('${{ matrix.backend }}'); print('✓ Backend ${{ matrix.backend }} works')"
+        python tools/yirage_backend_manager.py info
+
+    - name: Run basic tests
+      run: |
+        pytest tests/python/ -x -v --tb=short

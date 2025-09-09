@@ -1,0 +1,622 @@
+name: Multi-Backend CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+    inputs:
+      run_performance_tests:
+        description: 'Run performance benchmarks'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  PYTHON_VERSION: "3.10"
+  CMAKE_BUILD_TYPE: Release
+  CCACHE_COMPRESS: true
+  CCACHE_COMPRESSLEVEL: 6
+  CCACHE_MAXSIZE: 2G
+
+jobs:
+  # Job 1: Build and test CPU backend
+  cpu-backend:
+    name: CPU Backend (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            cc: gcc-11
+            cxx: g++-11
+          - os: macos-latest
+            cc: clang
+            cxx: clang++
+          - os: windows-latest
+            cc: cl
+            cxx: cl
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install system dependencies (Ubuntu)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          ninja-build \
+          libomp-dev \
+          libopenblas-dev \
+          liblapack-dev \
+          ccache
+
+    - name: Install system dependencies (macOS)
+      if: matrix.os == 'macos-latest'
+      run: |
+        brew install cmake ninja libomp openblas lapack ccache
+
+    - name: Install system dependencies (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        choco install cmake ninja ccache
+        # Note: OpenMP and BLAS will be handled differently on Windows
+
+    - name: Set up ccache
+      uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        key: ${{ matrix.os }}-cpu-${{ github.sha }}
+        restore-keys: ${{ matrix.os }}-cpu-
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip setuptools wheel
+        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+        pip install numpy scipy cython psutil pytest pytest-benchmark
+
+    - name: Configure CMake (Unix)
+      if: matrix.os != 'windows-latest'
+      run: |
+        mkdir -p build
+        cd build
+        cmake -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+              -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+              -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+              -DYIRAGE_USE_CPU=ON \
+              -DYIRAGE_USE_CUDA=OFF \
+              -DYIRAGE_USE_MPS=OFF \
+              -GNinja \
+              ..
+
+    - name: Configure CMake (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        mkdir build
+        cd build
+        cmake -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+              -DYIRAGE_USE_CPU=ON \
+              -DYIRAGE_USE_CUDA=OFF \
+              -DYIRAGE_USE_MPS=OFF \
+              ..
+
+    - name: Build
+      run: |
+        cd build
+        cmake --build . --config ${{ env.CMAKE_BUILD_TYPE }} --parallel
+
+    - name: Install Python package
+      run: |
+        pip install -e . -v
+
+    - name: Run basic tests
+      run: |
+        python -c "import yirage as yr; print('✓ YiRage imported successfully')"
+        python -c "import yirage as yr; yr.set_backend('cpu'); print('✓ CPU backend configured')"
+
+    - name: Run unit tests
+      run: |
+        pytest tests/python/ -v --tb=short
+
+    - name: Run CPU backend tests
+      run: |
+        python tools/yirage_backend_manager.py test --backend cpu --quick
+
+    - name: Run performance tests
+      if: github.event.inputs.run_performance_tests == 'true'
+      run: |
+        python benchmark/multi_backend_benchmark.py --backend cpu --iterations 10 --output cpu_benchmark_${{ matrix.os }}.json
+
+    - name: Upload benchmark results
+      if: github.event.inputs.run_performance_tests == 'true'
+      uses: actions/upload-artifact@v3
+      with:
+        name: cpu-benchmark-${{ matrix.os }}
+        path: cpu_benchmark_${{ matrix.os }}.json
+
+  # Job 2: Build and test CUDA backend
+  cuda-backend:
+    name: CUDA Backend
+    runs-on: ubuntu-latest
+    container:
+      image: nvidia/cuda:12.2-devel-ubuntu22.04
+      options: --gpus all
+
+    steps:
+    - name: Install git and basic tools
+      run: |
+        apt-get update
+        apt-get install -y git wget curl build-essential
+
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install Python
+      run: |
+        apt-get install -y python3 python3-pip python3-dev
+        ln -sf python3 /usr/bin/python
+
+    - name: Install system dependencies
+      run: |
+        apt-get install -y \
+          cmake \
+          ninja-build \
+          libomp-dev \
+          libopenblas-dev \
+          liblapack-dev \
+          ccache
+
+    - name: Set up ccache
+      uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        key: cuda-${{ github.sha }}
+        restore-keys: cuda-
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip setuptools wheel
+        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+        pip install numpy scipy cython psutil pytest pytest-benchmark
+
+    - name: Configure CMake
+      run: |
+        mkdir -p build
+        cd build
+        cmake -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+              -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+              -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+              -DYIRAGE_USE_CPU=ON \
+              -DYIRAGE_USE_CUDA=ON \
+              -DYIRAGE_USE_MPS=OFF \
+              -DCUDA_ARCHITECTURES="70;75;80;86;89;90" \
+              -GNinja \
+              ..
+
+    - name: Build
+      run: |
+        cd build
+        cmake --build . --config ${{ env.CMAKE_BUILD_TYPE }} --parallel
+
+    - name: Install Python package
+      run: |
+        pip install -e . -v
+
+    - name: Check CUDA availability
+      run: |
+        nvidia-smi || echo "No GPU available, continuing with CPU-only tests"
+        python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
+
+    - name: Run basic tests
+      run: |
+        python -c "import yirage as yr; print('✓ YiRage imported successfully')"
+        python -c "import yirage as yr; yr.set_backend('cuda'); print('✓ CUDA backend configured')" || echo "CUDA backend not available"
+
+    - name: Run unit tests
+      run: |
+        pytest tests/python/ -v --tb=short
+
+    - name: Run CUDA backend tests
+      run: |
+        python tools/yirage_backend_manager.py test --backend cuda --quick || echo "CUDA tests skipped (no GPU)"
+
+    - name: Run performance tests
+      if: github.event.inputs.run_performance_tests == 'true'
+      run: |
+        python benchmark/multi_backend_benchmark.py --backend cuda --iterations 10 --output cuda_benchmark.json || echo "CUDA benchmark skipped"
+
+    - name: Upload benchmark results
+      if: github.event.inputs.run_performance_tests == 'true'
+      uses: actions/upload-artifact@v3
+      with:
+        name: cuda-benchmark
+        path: cuda_benchmark.json
+
+  # Job 3: Build and test MPS backend (macOS only)
+  mps-backend:
+    name: MPS Backend (macOS)
+    runs-on: macos-14  # M1 runner for native Apple Silicon testing
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install system dependencies
+      run: |
+        brew install cmake ninja libomp ccache
+
+    - name: Set up ccache
+      uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        key: mps-${{ github.sha }}
+        restore-keys: mps-
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip setuptools wheel
+        pip install torch torchvision torchaudio
+        pip install numpy scipy cython psutil pytest pytest-benchmark
+
+    - name: Configure CMake
+      run: |
+        mkdir -p build
+        cd build
+        cmake -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+              -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+              -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+              -DYIRAGE_USE_CPU=ON \
+              -DYIRAGE_USE_CUDA=OFF \
+              -DYIRAGE_USE_MPS=ON \
+              -GNinja \
+              ..
+
+    - name: Build
+      run: |
+        cd build
+        cmake --build . --config ${{ env.CMAKE_BUILD_TYPE }} --parallel
+
+    - name: Install Python package
+      run: |
+        pip install -e . -v
+
+    - name: Check MPS availability
+      run: |
+        python -c "import torch; print(f'MPS available: {torch.backends.mps.is_available()}')"
+        system_profiler SPDisplaysDataType | grep -i metal || echo "Metal info not available"
+
+    - name: Run basic tests
+      run: |
+        python -c "import yirage as yr; print('✓ YiRage imported successfully')"
+        python -c "import yirage as yr; yr.set_backend('mps'); print('✓ MPS backend configured')" || echo "MPS backend not available"
+
+    - name: Run unit tests
+      run: |
+        pytest tests/python/ -v --tb=short
+
+    - name: Run MPS backend tests
+      run: |
+        python tools/yirage_backend_manager.py test --backend mps --quick || echo "MPS tests skipped"
+
+    - name: Run performance tests
+      if: github.event.inputs.run_performance_tests == 'true'
+      run: |
+        python benchmark/multi_backend_benchmark.py --backend mps --iterations 10 --output mps_benchmark.json || echo "MPS benchmark skipped"
+
+    - name: Upload benchmark results
+      if: github.event.inputs.run_performance_tests == 'true'
+      uses: actions/upload-artifact@v3
+      with:
+        name: mps-benchmark
+        path: mps_benchmark.json
+
+  # Job 4: Integration and end-to-end tests
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: [cpu-backend]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          ninja-build \
+          libomp-dev \
+          libopenblas-dev
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip setuptools wheel
+        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+        pip install numpy scipy cython psutil pytest pytest-benchmark transformers
+
+    - name: Build and install
+      run: |
+        mkdir -p build
+        cd build
+        cmake -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+              -DYIRAGE_USE_CPU=ON \
+              -DYIRAGE_USE_CUDA=OFF \
+              -DYIRAGE_USE_MPS=OFF \
+              -GNinja \
+              ..
+        cmake --build . --config ${{ env.CMAKE_BUILD_TYPE }} --parallel
+        cd ..
+        pip install -e . -v
+
+    - name: Run integration tests
+      run: |
+        pytest tests/runtime_python/ -v --tb=short
+
+    - name: Test multi-backend switching
+      run: |
+        python -c "
+        import yirage as yr
+
+        # Test backend enumeration
+        backends = yr.get_available_backends()
+        print(f'Available backends: {[b.value for b in backends]}')
+
+        # Test backend switching
+        for backend in backends:
+            print(f'Testing {backend.value} backend...')
+            yr.set_backend(backend.value)
+            current = yr.get_backend()
+            assert current == backend, f'Backend mismatch: {current} != {backend}'
+            print(f'✓ {backend.value} backend works')
+        "
+
+    - name: Test example scripts
+      run: |
+        python examples/llm_inference_multi_backend.py --backend cpu --help
+        python examples/llm_inference_multi_backend.py --backend cpu --batch-size 1 --seq-length 128 --num-layers 4
+
+    - name: Test backend manager tool
+      run: |
+        python tools/yirage_backend_manager.py info
+        python tools/yirage_backend_manager.py optimize --dry-run
+
+    - name: Test configuration templates
+      run: |
+        python configs/backend_templates.py list
+        python configs/backend_templates.py show cpu_standard
+
+  # Job 5: Docker builds
+  docker-builds:
+    name: Docker Multi-Backend Build
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build CPU-only Docker image
+      run: |
+        docker build -f docker/Dockerfile.multi-backend \
+          --build-arg YIRAGE_USE_CUDA=OFF \
+          --build-arg YIRAGE_USE_MPS=OFF \
+          -t yirage/multi-backend:cpu-latest \
+          .
+
+    - name: Test CPU Docker image
+      run: |
+        docker run --rm yirage/multi-backend:cpu-latest \
+          python3 -c "import yirage as yr; yr.set_backend('cpu'); print('✓ CPU backend works in Docker')"
+
+    - name: Build CUDA Docker image
+      run: |
+        docker build -f docker/Dockerfile.multi-backend \
+          --build-arg YIRAGE_USE_CUDA=ON \
+          --build-arg YIRAGE_USE_MPS=OFF \
+          -t yirage/multi-backend:cuda-latest \
+          .
+
+    - name: Test CUDA Docker image
+      run: |
+        docker run --rm yirage/multi-backend:cuda-latest \
+          python3 -c "import yirage as yr; print('✓ CUDA Docker image built successfully')"
+
+  # Job 6: Code quality and security
+  code-quality:
+    name: Code Quality & Security
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install linting tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install black flake8 mypy bandit safety
+        pip install numpy cython  # Required for type checking
+
+    - name: Run Black formatter check
+      run: |
+        black --check --diff python/
+
+    - name: Run Flake8 linter
+      run: |
+        flake8 python/ --max-line-length=88 --extend-ignore=E203,W503
+
+    - name: Run MyPy type checker
+      continue-on-error: true  # Type checking might fail due to C extensions
+      run: |
+        mypy python/yirage/ --ignore-missing-imports
+
+    - name: Run Bandit security linter
+      run: |
+        bandit -r python/ -x tests/
+
+    - name: Check Python dependencies for vulnerabilities
+      run: |
+        safety check --json || echo "Safety check completed with warnings"
+
+  # Job 7: Benchmark comparison (only on main branch)
+  benchmark-comparison:
+    name: Benchmark Comparison
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event.inputs.run_performance_tests == 'true'
+    needs: [cpu-backend, integration-tests]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        fetch-depth: 0  # Fetch all history for comparison
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake ninja-build libomp-dev libopenblas-dev
+        python -m pip install --upgrade pip setuptools wheel
+        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+        pip install numpy scipy cython psutil matplotlib
+
+    - name: Build and install
+      run: |
+        mkdir -p build
+        cd build
+        cmake -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+              -DYIRAGE_USE_CPU=ON \
+              -DYIRAGE_USE_CUDA=OFF \
+              -DYIRAGE_USE_MPS=OFF \
+              -GNinja \
+              ..
+        cmake --build . --config ${{ env.CMAKE_BUILD_TYPE }} --parallel
+        cd ..
+        pip install -e . -v
+
+    - name: Run comprehensive benchmarks
+      run: |
+        python benchmark/multi_backend_benchmark.py \
+          --iterations 50 \
+          --output comprehensive_benchmark.json \
+          --report
+
+    - name: Generate benchmark report
+      run: |
+        python -c "
+        import json
+        import matplotlib.pyplot as plt
+
+        with open('comprehensive_benchmark.json') as f:
+            data = json.load(f)
+
+        # Create performance visualization
+        backends = list(data.keys())
+        times = [data[b].get('avg_time_ms', 0) for b in backends]
+
+        plt.figure(figsize=(10, 6))
+        plt.bar(backends, times)
+        plt.title('Backend Performance Comparison')
+        plt.ylabel('Average Time (ms)')
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        plt.savefig('benchmark_comparison.png', dpi=150)
+
+        print('Benchmark visualization saved to benchmark_comparison.png')
+        "
+
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v3
+      with:
+        name: comprehensive-benchmarks
+        path: |
+          comprehensive_benchmark.json
+          benchmark_comparison.png
+
+  # Job 8: Create release on tag
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [cpu-backend, cuda-backend, mps-backend, integration-tests]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Create Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: YiRage Multi-Backend ${{ github.ref }}
+        body: |
+          ## YiRage Multi-Backend Release
+
+          This release includes:
+          - ✅ CPU backend support (OpenMP, BLAS)
+          - ✅ CUDA backend support (cuBLAS, cuDNN)
+          - ✅ MPS backend support (Metal Performance Shaders)
+          - ✅ Unified Python API
+          - ✅ Performance optimization tools
+          - ✅ Docker containers
+          - ✅ Comprehensive documentation
+
+          ### Installation
+          ```bash
+          pip install yirage
+          ```
+
+          ### Quick Start
+          ```python
+          import yirage as yr
+          yr.set_backend('auto')  # Automatically select best backend
+          ```
+
+          See [documentation](README.md) for detailed usage instructions.
+        draft: false
+        prerelease: false

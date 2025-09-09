@@ -1,0 +1,475 @@
+name: Performance Benchmarks
+
+on:
+  schedule:
+    # Run benchmarks daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      benchmark_duration:
+        description: 'Benchmark duration (seconds)'
+        required: false
+        default: '300'
+        type: string
+      iterations:
+        description: 'Number of iterations per test'
+        required: false
+        default: '100'
+        type: string
+      backends:
+        description: 'Backends to test (comma-separated)'
+        required: false
+        default: 'cpu,cuda'
+        type: string
+
+env:
+  BENCHMARK_OUTPUT_DIR: benchmark_results
+
+jobs:
+  cpu-benchmark:
+    name: CPU Performance Benchmark
+    runs-on: ubuntu-latest
+    if: contains(github.event.inputs.backends, 'cpu') || github.event.inputs.backends == ''
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.10"
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          ninja-build \
+          libomp-dev \
+          libopenblas-dev \
+          liblapack-dev \
+          hwloc \
+          numactl
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+        pip install numpy scipy cython psutil matplotlib seaborn pandas
+    
+    - name: Build YiRage
+      run: |
+        mkdir build && cd build
+        cmake -DCMAKE_BUILD_TYPE=Release \
+              -DYIRAGE_USE_CPU=ON \
+              -DYIRAGE_USE_CUDA=OFF \
+              -DYIRAGE_USE_MPS=OFF \
+              -GNinja ..
+        ninja -j$(nproc)
+    
+    - name: Install YiRage
+      run: pip install -e .
+    
+    - name: System information
+      run: |
+        echo "=== CPU Information ===" 
+        lscpu
+        echo "=== Memory Information ==="
+        free -h
+        echo "=== NUMA Information ==="
+        numactl --hardware || echo "NUMA not available"
+        echo "=== OpenMP Information ==="
+        python -c "
+        import os
+        print(f'OMP_NUM_THREADS: {os.environ.get(\"OMP_NUM_THREADS\", \"not set\")}')
+        print(f'OMP_PROC_BIND: {os.environ.get(\"OMP_PROC_BIND\", \"not set\")}')
+        "
+    
+    - name: Run CPU benchmarks
+      run: |
+        mkdir -p ${{ env.BENCHMARK_OUTPUT_DIR }}
+        
+        # Set optimal CPU configuration
+        export OMP_NUM_THREADS=$(nproc)
+        export OMP_PROC_BIND=spread
+        export OMP_PLACES=threads
+        
+        python benchmark/multi_backend_benchmark.py \
+          --backend cpu \
+          --iterations ${{ github.event.inputs.iterations || '100' }} \
+          --duration ${{ github.event.inputs.benchmark_duration || '300' }} \
+          --output ${{ env.BENCHMARK_OUTPUT_DIR }}/cpu_benchmark_$(date +%Y%m%d_%H%M%S).json \
+          --verbose
+    
+    - name: Generate CPU performance report
+      run: |
+        python -c "
+        import json
+        import os
+        import glob
+        import matplotlib.pyplot as plt
+        import pandas as pd
+        from datetime import datetime
+        
+        # Find latest benchmark file
+        files = glob.glob('${{ env.BENCHMARK_OUTPUT_DIR }}/cpu_benchmark_*.json')
+        if not files:
+            print('No benchmark files found')
+            exit(1)
+        
+        latest_file = max(files, key=os.path.getctime)
+        print(f'Processing: {latest_file}')
+        
+        with open(latest_file) as f:
+            data = json.load(f)
+        
+        # Generate summary report
+        report = []
+        report.append('# CPU Performance Benchmark Report')
+        report.append(f'Generated: {datetime.now().isoformat()}')
+        report.append('')
+        
+        if 'system_info' in data:
+            info = data['system_info']
+            report.append('## System Information')
+            report.append(f'- CPU: {info.get(\"cpu_model\", \"Unknown\")}')
+            report.append(f'- Cores: {info.get(\"cpu_count\", \"Unknown\")}')
+            report.append(f'- Memory: {info.get(\"total_memory_gb\", \"Unknown\")} GB')
+            report.append('')
+        
+        if 'results' in data:
+            results = data['results'] 
+            report.append('## Performance Results')
+            for test_name, result in results.items():
+                if isinstance(result, dict) and 'avg_time_ms' in result:
+                    report.append(f'- {test_name}: {result[\"avg_time_ms\"]:.2f}±{result.get(\"std_time_ms\", 0):.2f} ms')
+                    if 'throughput_ops_per_sec' in result:
+                        report.append(f'  - Throughput: {result[\"throughput_ops_per_sec\"]:.1f} ops/sec')
+            report.append('')
+        
+        # Save report
+        with open('${{ env.BENCHMARK_OUTPUT_DIR }}/cpu_performance_report.md', 'w') as f:
+            f.write('\\n'.join(report))
+        
+        print('Performance report generated')
+        "
+    
+    - name: Upload CPU benchmark results
+      uses: actions/upload-artifact@v3
+      with:
+        name: cpu-benchmark-results
+        path: ${{ env.BENCHMARK_OUTPUT_DIR }}/
+
+  cuda-benchmark:
+    name: CUDA Performance Benchmark  
+    runs-on: ubuntu-latest
+    if: contains(github.event.inputs.backends, 'cuda') || github.event.inputs.backends == ''
+    container:
+      image: nvidia/cuda:12.2-devel-ubuntu22.04
+      options: --gpus all
+    
+    steps:
+    - name: Install git and basic tools
+      run: |
+        apt-get update
+        apt-get install -y git wget curl build-essential
+    
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    
+    - name: Install Python and dependencies
+      run: |
+        apt-get install -y python3 python3-pip python3-dev
+        ln -sf python3 /usr/bin/python
+        python -m pip install --upgrade pip
+        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+        pip install numpy scipy cython psutil matplotlib seaborn pandas
+    
+    - name: Install system dependencies
+      run: |
+        apt-get install -y cmake ninja-build libomp-dev libopenblas-dev
+    
+    - name: Build YiRage
+      run: |
+        mkdir build && cd build
+        cmake -DCMAKE_BUILD_TYPE=Release \
+              -DYIRAGE_USE_CPU=ON \
+              -DYIRAGE_USE_CUDA=ON \
+              -DYIRAGE_USE_MPS=OFF \
+              -DCUDA_ARCHITECTURES=\"70;75;80;86;89;90\" \
+              -GNinja ..
+        ninja -j$(nproc)
+    
+    - name: Install YiRage
+      run: pip install -e .
+    
+    - name: GPU information
+      run: |
+        echo "=== GPU Information ==="
+        nvidia-smi
+        echo "=== CUDA Information ==="
+        nvcc --version
+        python -c "
+        import torch
+        print(f'PyTorch CUDA available: {torch.cuda.is_available()}')
+        if torch.cuda.is_available():
+            print(f'CUDA devices: {torch.cuda.device_count()}')
+            for i in range(torch.cuda.device_count()):
+                props = torch.cuda.get_device_properties(i)
+                print(f'  Device {i}: {props.name} ({props.total_memory//1024//1024} MB)')
+        "
+    
+    - name: Run CUDA benchmarks
+      run: |
+        mkdir -p ${{ env.BENCHMARK_OUTPUT_DIR }}
+        
+        if nvidia-smi > /dev/null 2>&1; then
+          python benchmark/multi_backend_benchmark.py \
+            --backend cuda \
+            --iterations ${{ github.event.inputs.iterations || '100' }} \
+            --duration ${{ github.event.inputs.benchmark_duration || '300' }} \
+            --output ${{ env.BENCHMARK_OUTPUT_DIR }}/cuda_benchmark_$(date +%Y%m%d_%H%M%S).json \
+            --verbose
+        else
+          echo "No CUDA GPUs available, skipping CUDA benchmarks"
+          echo '{}' > ${{ env.BENCHMARK_OUTPUT_DIR }}/cuda_benchmark_skipped.json
+        fi
+    
+    - name: Upload CUDA benchmark results
+      uses: actions/upload-artifact@v3
+      with:
+        name: cuda-benchmark-results
+        path: ${{ env.BENCHMARK_OUTPUT_DIR }}/
+
+  benchmark-comparison:
+    name: Compare Benchmark Results
+    runs-on: ubuntu-latest
+    needs: [cpu-benchmark]
+    if: always()
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.10"
+    
+    - name: Install analysis tools
+      run: |
+        pip install matplotlib seaborn pandas numpy scipy
+    
+    - name: Download all benchmark results
+      uses: actions/download-artifact@v3
+      with:
+        path: all_benchmarks/
+    
+    - name: Generate comparison report
+      run: |
+        python -c "
+        import json
+        import os
+        import glob
+        import matplotlib.pyplot as plt
+        import pandas as pd
+        import numpy as np
+        from datetime import datetime
+        
+        # Find all benchmark files
+        benchmark_files = []
+        for root, dirs, files in os.walk('all_benchmarks/'):
+            for file in files:
+                if file.endswith('.json') and 'benchmark' in file and 'skipped' not in file:
+                    benchmark_files.append(os.path.join(root, file))
+        
+        print(f'Found {len(benchmark_files)} benchmark files')
+        
+        # Process benchmark data
+        all_results = {}
+        for file in benchmark_files:
+            try:
+                with open(file) as f:
+                    data = json.load(f)
+                
+                # Extract backend name from file path
+                if 'cpu' in file:
+                    backend = 'CPU'
+                elif 'cuda' in file:
+                    backend = 'CUDA'
+                elif 'mps' in file:
+                    backend = 'MPS'
+                else:
+                    backend = 'Unknown'
+                
+                if 'results' in data:
+                    all_results[backend] = data['results']
+                    
+            except Exception as e:
+                print(f'Error processing {file}: {e}')
+        
+        # Generate comparison plots
+        if all_results:
+            fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+            fig.suptitle('YiRage Multi-Backend Performance Comparison', fontsize=16)
+            
+            # Plot 1: Average execution times
+            backends = list(all_results.keys())
+            
+            # Create markdown report
+            report = []
+            report.append('# Multi-Backend Performance Comparison')
+            report.append(f'Generated: {datetime.now().isoformat()}')
+            report.append('')
+            report.append('## Summary')
+            report.append(f'Tested backends: {backends}')
+            report.append('')
+            
+            # Save plots and report
+            plt.tight_layout()
+            plt.savefig('benchmark_comparison.png', dpi=150, bbox_inches='tight')
+            
+            with open('performance_comparison_report.md', 'w') as f:
+                f.write('\\n'.join(report))
+            
+            print(f'Generated comparison for backends: {backends}')
+        else:
+            print('No valid benchmark results found')
+        "
+    
+    - name: Upload comparison results
+      uses: actions/upload-artifact@v3
+      with:
+        name: benchmark-comparison
+        path: |
+          benchmark_comparison.png
+          performance_comparison_report.md
+
+  # Performance regression check
+  regression-check:
+    name: Performance Regression Check
+    runs-on: ubuntu-latest
+    needs: [cpu-benchmark]
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: Checkout PR
+      uses: actions/checkout@v4
+    
+    - name: Checkout main branch
+      uses: actions/checkout@v4
+      with:
+        ref: main
+        path: main_branch
+    
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.10"
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake ninja-build libomp-dev libopenblas-dev
+        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+        pip install numpy scipy cython
+    
+    - name: Download PR benchmark results
+      uses: actions/download-artifact@v3
+      with:
+        name: cpu-benchmark-results
+        path: pr_results/
+    
+    - name: Build and benchmark main branch
+      run: |
+        cd main_branch
+        mkdir build && cd build
+        cmake -DCMAKE_BUILD_TYPE=Release -DYIRAGE_USE_CPU=ON -DYIRAGE_USE_CUDA=OFF -DYIRAGE_USE_MPS=OFF -GNinja ..
+        ninja -j$(nproc)
+        cd ..
+        pip install -e .
+        
+        python benchmark/multi_backend_benchmark.py \
+          --backend cpu \
+          --iterations 50 \
+          --output ../main_benchmark.json \
+          --quick
+    
+    - name: Compare performance
+      run: |
+        python -c "
+        import json
+        import glob
+        
+        # Load main branch results
+        with open('main_benchmark.json') as f:
+            main_data = json.load(f)
+        
+        # Load PR results
+        pr_files = glob.glob('pr_results/*benchmark*.json')
+        if not pr_files:
+            print('No PR benchmark files found')
+            exit(1)
+        
+        with open(pr_files[0]) as f:
+            pr_data = json.load(f)
+        
+        # Compare results
+        print('# Performance Comparison: PR vs Main')
+        print('| Test | Main (ms) | PR (ms) | Change | Status |')
+        print('|------|-----------|---------|--------|--------|')
+        
+        regression_threshold = 1.10  # 10% slower is considered a regression
+        improvement_threshold = 0.95  # 5% faster is considered an improvement
+        
+        any_regression = False
+        
+        if 'results' in main_data and 'results' in pr_data:
+            main_results = main_data['results']
+            pr_results = pr_data['results']
+            
+            for test_name in main_results:
+                if test_name in pr_results:
+                    main_time = main_results[test_name].get('avg_time_ms', 0)
+                    pr_time = pr_results[test_name].get('avg_time_ms', 0)
+                    
+                    if main_time > 0:
+                        ratio = pr_time / main_time
+                        change_pct = (ratio - 1) * 100
+                        
+                        if ratio > regression_threshold:
+                            status = '🔴 REGRESSION'
+                            any_regression = True
+                        elif ratio < improvement_threshold:
+                            status = '🟢 IMPROVEMENT'
+                        else:
+                            status = '⚪ OK'
+                        
+                        print(f'| {test_name} | {main_time:.2f} | {pr_time:.2f} | {change_pct:+.1f}% | {status} |')
+        
+        if any_regression:
+            print('')
+            print('❌ Performance regression detected!')
+            exit(1)
+        else:
+            print('')
+            print('✅ No significant performance regressions detected.')
+        "
+    
+    - name: Comment on PR
+      if: failure()
+      uses: actions/github-script@v6
+      with:
+        script: |
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: '⚠️ Performance regression detected in this PR. Please check the benchmark results in the CI logs.'
+          })
