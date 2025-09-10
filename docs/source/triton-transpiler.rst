@@ -99,7 +99,7 @@ find as ``demo/triton_rms_norm.py``:
 
 .. code:: python
 
-   import yirage as mi
+   import yirage as yr
    import torch
 
    # Create a kernel graph

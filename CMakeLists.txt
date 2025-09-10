@@ -1,5 +1,16 @@
 cmake_minimum_required(VERSION 3.24 FATAL_ERROR)
-project(YIRAGE LANGUAGES C CXX CUDA)
+
+# Option to build CPU-only version
+option(YIRAGE_CPU_ONLY "Build CPU-only version without CUDA" OFF)
+
+if(YIRAGE_CPU_ONLY)
+    project(YIRAGE LANGUAGES C CXX)
+    add_compile_definitions(YIRAGE_CPU_ONLY)
+    message(STATUS "Building YiRage in CPU-only mode")
+else()
+    project(YIRAGE LANGUAGES C CXX CUDA)
+    message(STATUS "Building YiRage with CUDA support")
+endif()
 
 message(STATUS "CMake Version: ${CMAKE_VERSION}")
 

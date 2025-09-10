@@ -8,7 +8,7 @@ Introduction
 
 .. code-block:: Python
     import torch
-    import yirage as mi
+    import yirage as yr
     graph = yr.new_kernel_graph()
     Q = graph.new_input(dims=(2, 256, 64), dtype=yr.float16)
     K = graph.new_input(dims=(2, 64, 4096), dtype=yr.float16)

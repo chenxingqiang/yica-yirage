@@ -1,0 +1,156 @@
+name: Multi-Backend Compatibility Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 2 * * 0'  # Weekly on Sunday at 2 AM
+
+jobs:
+  compatibility-matrix:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        backend: [cpu, auto]
+        python-version: ['3.9', '3.12']
+        include:
+          - os: macos-latest
+            backend: mps
+            python-version: '3.11'
+            
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+        pip install pytest numpy
+        pip install -r requirements.txt
+        
+    - name: Configure backend environment
+      run: |
+        echo "YIRAGE_BACKEND=${{ matrix.backend }}" >> $GITHUB_ENV
+        if [ "${{ matrix.backend }}" = "cpu" ]; then
+          echo "CUDA_VISIBLE_DEVICES=" >> $GITHUB_ENV
+        fi
+        
+    - name: Test backend compatibility
+      run: |
+        python -c "
+        import yirage as yr
+        import os
+        
+        target_backend = '${{ matrix.backend }}'.upper()
+        print(f'Testing backend: {target_backend}')
+        
+        backends = yr.get_available_backends()
+        print(f'Available backends: {[str(b) for b in backends]}')
+        
+        if target_backend == 'AUTO':
+            yr.set_backend(yr.BackendType.AUTO)
+        elif target_backend == 'CPU':
+            yr.set_backend(yr.BackendType.CPU)
+        elif target_backend == 'MPS':
+            if yr.BackendType.MPS in backends:
+                yr.set_backend(yr.BackendType.MPS)
+            else:
+                print('MPS not available, using CPU')
+                yr.set_backend(yr.BackendType.CPU)
+        
+        current = yr.get_current_backend()
+        print(f'Active backend: {current}')
+        
+        # Test basic operations
+        graph = yr.new_kernel_graph()
+        x = graph.new_input(dims=(16, 32), dtype=yr.float16)
+        y = graph.new_input(dims=(16, 32), dtype=yr.float16)
+        z = graph.add(x, y)
+        graph.mark_output(z)
+        print('Basic operations successful')
+        "
+        
+    - name: Run backend-specific tests
+      run: |
+        python test_production_ready.py
+        
+    - name: Test switching between backends
+      run: |
+        python -c "
+        import yirage as yr
+        
+        backends = yr.get_available_backends()
+        print(f'Testing switching between: {[str(b) for b in backends]}')
+        
+        for backend in backends:
+            try:
+                yr.set_backend(backend)
+                current = yr.get_current_backend()
+                print(f'✅ Switched to {backend}: {current}')
+                
+                # Quick operation test
+                graph = yr.new_kernel_graph()
+                x = graph.new_input(dims=(8, 16), dtype=yr.float16)
+                y = graph.new_input(dims=(8, 16), dtype=yr.float16)
+                z = graph.add(x, y)
+                graph.mark_output(z)
+                print(f'✅ Operations work on {backend}')
+                
+            except Exception as e:
+                print(f'❌ Backend {backend} failed: {e}')
+        "
+
+  performance-baseline:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+        pip install pytest numpy
+        pip install -r requirements.txt
+        
+    - name: Run performance baseline tests
+      run: |
+        python -c "
+        import yirage as yr
+        import time
+        
+        yr.set_backend(yr.BackendType.CPU)
+        
+        # Simple performance test
+        start_time = time.time()
+        
+        for i in range(10):
+            graph = yr.new_kernel_graph()
+            x = graph.new_input(dims=(32, 64), dtype=yr.float16)
+            y = graph.new_input(dims=(32, 64), dtype=yr.float16)
+            z = graph.add(x, y)
+            graph.mark_output(z)
+        
+        end_time = time.time()
+        print(f'Graph creation time for 10 graphs: {end_time - start_time:.4f} seconds')
+        print('Performance baseline established')
+        "

@@ -18,6 +18,13 @@
 #include "yirage/kernel/graph.h"
 #include "yirage/layout.h"
 #include "yirage/utils/hash_utils.h"
+
+#ifdef YIRAGE_CPU_ONLY
+#include "yirage/config_cpu.h"
+#else
+#include "yirage/config.h"
+#endif
+
 #include <cassert>
 #include <iostream>
 

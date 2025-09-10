@@ -1,0 +1,91 @@
+cmake_minimum_required(VERSION 3.18)
+project(YiRage_CPU_Complete LANGUAGES CXX)
+
+# Set source directory to parent
+set(YIRAGE_SOURCE_DIR ${CMAKE_SOURCE_DIR}/..)
+
+# Include CPU build configuration
+include(${YIRAGE_SOURCE_DIR}/cmake/cpu_full_build.cmake)
+
+# Include directories
+include_directories(
+    ${YIRAGE_SOURCE_DIR}/include
+    ${YIRAGE_SOURCE_DIR}/include/yirage
+    ${YIRAGE_SOURCE_DIR}/include/yirage/cpu
+)
+
+# Create the main CPU library with all functionality
+add_library(yirage_cpu_complete STATIC ${YIRAGE_CPU_ALL_SOURCES})
+
+# Apply all CPU definitions
+foreach(DEF ${YIRAGE_CPU_DEFINITIONS})
+    target_compile_definitions(yirage_cpu_complete PRIVATE ${DEF})
+endforeach()
+
+# Link dependencies
+if(YIRAGE_OPENMP_AVAILABLE)
+    target_link_libraries(yirage_cpu_complete PRIVATE OpenMP::OpenMP_CXX)
+endif()
+
+if(YIRAGE_Z3_AVAILABLE)
+    target_link_libraries(yirage_cpu_complete PRIVATE ${Z3_LIBRARIES})
+    target_include_directories(yirage_cpu_complete PRIVATE ${Z3_INCLUDE_DIR})
+endif()
+
+# Apple-specific linking
+if(APPLE AND YIRAGE_USE_MPS AND YIRAGE_MPS_FRAMEWORKS_AVAILABLE)
+    target_link_libraries(yirage_cpu_complete PRIVATE
+        ${METAL_FRAMEWORK}
+        ${MPS_FRAMEWORK}
+        ${FOUNDATION_FRAMEWORK}
+        ${METALKIT_FRAMEWORK}
+    )
+    
+    # Set Objective-C++ properties for MPS files
+    set_source_files_properties(
+        src/backend/mps/mps_backend.mm
+        PROPERTIES COMPILE_FLAGS "-x objective-c++ -fobjc-arc"
+    )
+endif()
+
+# Rust library integration (if available)
+if(EXISTS ${CMAKE_SOURCE_DIR}/target/release/libabstract_subexpr.a)
+    message(STATUS "Found Rust abstract_subexpr library")
+    target_link_libraries(yirage_cpu_complete PRIVATE 
+        ${CMAKE_SOURCE_DIR}/target/release/libabstract_subexpr.a)
+endif()
+
+if(EXISTS ${CMAKE_SOURCE_DIR}/target/release/libformal_verifier.a)
+    message(STATUS "Found Rust formal_verifier library")
+    target_link_libraries(yirage_cpu_complete PRIVATE 
+        ${CMAKE_SOURCE_DIR}/target/release/libformal_verifier.a)
+endif()
+
+# Create test executable
+add_executable(yirage_cpu_test
+    ${YIRAGE_SOURCE_DIR}/tests/simple_cpu_test.cpp
+)
+
+target_link_libraries(yirage_cpu_test PRIVATE yirage_cpu_complete)
+
+# Installation
+install(TARGETS yirage_cpu_complete
+    ARCHIVE DESTINATION lib
+    LIBRARY DESTINATION lib
+)
+
+install(DIRECTORY include/yirage
+    DESTINATION include
+    FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp"
+    PATTERN "cuda" EXCLUDE
+)
+
+# Print final configuration
+message(STATUS "=== Final CPU Build Configuration ===")
+message(STATUS "  Library: yirage_cpu_complete")
+message(STATUS "  Sources: ${YIRAGE_CPU_ALL_SOURCES}")
+message(STATUS "  Definitions: ${YIRAGE_CPU_DEFINITIONS}")
+message(STATUS "  OpenMP: ${YIRAGE_OPENMP_AVAILABLE}")
+message(STATUS "  Z3: ${YIRAGE_Z3_AVAILABLE}")
+message(STATUS "  MPS: ${YIRAGE_USE_MPS}")
+message(STATUS "======================================")

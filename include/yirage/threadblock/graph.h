@@ -21,7 +21,17 @@
 #include "yirage/threadblock/serializer/kernel_params.h"
 #include "yirage/threadblock/smem_tensor.h"
 #include <vector>
+#ifdef YIRAGE_CPU_ONLY
+// CPU-only: use basic vector types from utils/containers.h
+#include "yirage/utils/containers.h"
+#else
+#ifdef YIRAGE_CPU_ONLY
+// CPU-only: use basic vector types from utils/containers.h
+#include "yirage/utils/containers.h"
+#else
 #include <vector_types.h>
+#endif
+#endif
 
 namespace yirage {
 namespace threadblock {

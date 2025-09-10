@@ -2,10 +2,14 @@ include LICENSE
 include requirements.txt
 include config.cmake
 include CMakeLists.txt
+include README.md
+include pyproject.toml
 
 recursive-include include *
 recursive-include cmake *
 recursive-include src *
+recursive-include docs *.md *.rst
+recursive-include examples *.py
 
 recursive-include python/yirage/_cython *.pyx *.pxd
 recursive-include python/yirage/include *

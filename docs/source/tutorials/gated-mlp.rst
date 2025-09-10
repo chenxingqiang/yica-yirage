@@ -15,7 +15,7 @@ Gated MLP layers are currently used in many large language models (e.g., LLAMA-2
 .. code-block:: Python
 
     import torch
-    import yirage as mi
+    import yirage as yr
     graph = yr.new_kernel_graph()
     X = graph.new_input(dims=(8, 4096), dtype=yr.float16)
     W1 = graph.new_input(dims=(4096, 4096), dtype=yr.float16)

@@ -3,7 +3,17 @@
 #include "containers.h"
 #include <fstream>
 #include <nlohmann/json.hpp>
+
+#ifdef YIRAGE_CPU_ONLY
+// CPU-only: types are defined in containers.h
+#else
+#ifdef YIRAGE_CPU_ONLY
+// CPU-only: use basic vector types from utils/containers.h
+#include "yirage/utils/containers.h"
+#else
 #include <vector_types.h>
+#endif
+#endif
 
 using json = nlohmann::json;
 

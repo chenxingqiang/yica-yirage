@@ -20,7 +20,12 @@
 #include "yirage/threadblock/graph.h"
 #include "yirage/threadblock/operator.h"
 #include <tuple>
+#ifdef YIRAGE_CPU_ONLY
+// CPU-only: use basic vector types from utils/containers.h
+#include "yirage/utils/containers.h"
+#else
 #include <vector_types.h>
+#endif
 
 namespace yirage {
 namespace kernel {
@@ -32,7 +37,7 @@ public:
                  yirage::threadblock::Graph const &_graph);
   virtual ~KNCustomizedOp();
   void run(void);
-  bool fingerprint(void);
+  bool fingerprint(void) override;
   size_t get_owner_independent_hash() const override;
 
   operator json() const override;

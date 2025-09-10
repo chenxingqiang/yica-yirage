@@ -217,7 +217,7 @@ class KNGraph:
         self.backend = "cuda"
 
     def new_input(
-        self, dims: tuple, strides: tuple = None, dtype: dtype = float16
+        self, dims: tuple, strides: tuple = None, dtype = "float16", name: str = None
     ) -> DTensor:
         # use the default strided layout if strides = None
         if strides is None:
@@ -232,10 +232,10 @@ class KNGraph:
             assert check_stride(dims, strides, "row-major") | check_stride(
                 dims, strides, "column-major"
             )
-        return self.cygraph.new_input(dims, tuple(strides), dtype)
+        return self.cygraph.new_input(dims, dtype, name=name)
 
-    def mark_output(self, A: DTensor, strides: tuple = None):
-        return self.cygraph.mark_output(A, strides)
+    def mark_output(self, A: DTensor, strides: tuple = None, name: str = None):
+        return self.cygraph.mark_output(A, strides, name)
 
     def matmul(self, A: DTensor, B: DTensor) -> DTensor:
         return self.cygraph.matmul(A, B)
@@ -264,11 +264,11 @@ class KNGraph:
     def square(self, A: DTensor):
         return self.cygraph.square(A)
 
-    def add(self, A: DTensor, B: DTensor):
-        return self.cygraph.add(A, B)
+    def add(self, A: DTensor, B: DTensor, name: str = None):
+        return self.cygraph.add(A, B, name)
 
-    def mul(self, A: DTensor, B: DTensor):
-        return self.cygraph.mul(A, B)
+    def mul(self, A: DTensor, B: DTensor, name: str = None):
+        return self.cygraph.mul(A, B, name)
 
     def div(self, A: DTensor, B: DTensor):
         return self.cygraph.div(A, B)

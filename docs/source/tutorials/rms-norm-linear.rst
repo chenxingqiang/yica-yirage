@@ -21,7 +21,7 @@ Existing ML systems generally launch RMSNorm and the following MatMul as two sep
 
 .. code-block:: Python
 
-    import yirage as mi
+    import yirage as yr
     graph = yr.new_kernel_graph()
     X = graph.new_input(dims=(16, 4096), dtype=yr.float16)
     G = graph.new_input(dims=(1, 4096), dtype=yr.float16)

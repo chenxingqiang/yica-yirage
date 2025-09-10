@@ -5,7 +5,12 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+#ifdef YIRAGE_CPU_ONLY
+// CPU-only: use basic vector types from utils/containers.h
+#include "yirage/utils/containers.h"
+#else
 #include <vector_types.h>
+#endif
 
 // tuple hashing pulled from
 // https://www.variadic.xyz/2018/01/15/hashing-stdpair-and-stdtuple/

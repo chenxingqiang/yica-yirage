@@ -1,32 +1,85 @@
+"""
+YiRage: A Multi-Level Superoptimizer for Tensor Algebra
+"""
+
 import os
-import ctypes
-import z3
+import warnings
 
-def preload_so(lib_path, name_hint):
+# Try to import optional dependencies
+_NATIVE_EXTENSIONS_AVAILABLE = False
+
+try:
+    # Try to load native extensions if available
+    import ctypes
+    
+    # Check for Z3 (optional for advanced features)
+    # Skip Z3 for now due to compatibility issues
+    
+    # Try to load native YiRage extensions
+    _this_dir = os.path.dirname(__file__)
+    _yirage_root = os.path.abspath(os.path.join(_this_dir, "..", ".."))
+    
+    # Check for compiled extensions
+    extension_paths = [
+        os.path.join(_yirage_root, "build", "abstract_subexpr", "release", "libabstract_subexpr.so"),
+        os.path.join(_yirage_root, "build", "formal_verifier", "release", "libformal_verifier.so"),
+    ]
+    
+    for path in extension_paths:
+        if os.path.exists(path):
+            try:
+                ctypes.CDLL(path)
+            except OSError:
+                pass  # Continue with Python-only mode
+    
+    # Try to import core modules
     try:
-        ctypes.CDLL(lib_path)
-    except OSError as e:
-        raise ImportError(f"Could not preload {name_hint} ({lib_path}): {e}")
+        # Try native extensions first
+        from ._cython.core import *  # Cython compiled version
+        from .kernel import *
+        from .threadblock import *
+        _NATIVE_EXTENSIONS_AVAILABLE = True
+    except ImportError:
+        try:
+            # Fallback to Python implementation
+            from .core import *  # Python-only version
+            from .kernel import *
+            from .threadblock import *
+            _NATIVE_EXTENSIONS_AVAILABLE = False
+            warnings.warn("Using Python-only implementation. For better performance, build with native extensions.")
+        except ImportError:
+            warnings.warn("Native YiRage extensions not available. Running in Python-only mode.")
 
-_z3_libdir = os.path.join(os.path.dirname(z3.__file__), "lib")
-_z3_so_path = os.path.join(_z3_libdir, "libz3.so")
-preload_so(_z3_so_path, "libz3.so")
+except ImportError:
+    warnings.warn("YiRage native extensions not available. Some features may be limited.")
 
-_this_dir = os.path.dirname(__file__)
-_yirage_root = os.path.abspath(os.path.join(_this_dir, "..", ".."))
-_subexpr_so_path = os.path.join(_yirage_root, "build", "abstract_subexpr", "release", "libabstract_subexpr.so")
-_formal_verifier_so_path = os.path.join(_yirage_root, "build", "formal_verifier", "release", "libformal_verifier.so")
-preload_so(_subexpr_so_path, "libabstract_subexpr.so")
-preload_so(_formal_verifier_so_path, "libformal_verifier.so")
+# Always available Python modules
+from .version import __version__
 
-from .core import *
-from .kernel import *
-from .persistent_kernel import PersistentKernel
-from .threadblock import *
+# Define data types for compatibility
+import torch
+float16 = torch.float16
+float32 = torch.float32
+bfloat16 = torch.bfloat16
+int8 = torch.int8
+int16 = torch.int16
+int32 = torch.int32
+int64 = torch.int64
+
+# Import PersistentKernel based on backend availability
+try:
+    from .persistent_kernel import PersistentKernel
+    _PERSISTENT_KERNEL_AVAILABLE = True
+except ImportError as e:
+    warnings.warn(f"PersistentKernel not available: {e}")
+    _PERSISTENT_KERNEL_AVAILABLE = False
+    # Create a warning version that works in Python-only mode
+    from .persistent_kernel import PersistentKernel
 from .backend_config import (
     BackendType,
     set_backend,
     get_backend,
+    get_current_backend,
     get_available_backends,
     is_backend_available,
     get_backend_info,

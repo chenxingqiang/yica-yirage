@@ -24,6 +24,43 @@
 namespace yirage {
 namespace backend {
 
+// Helper functions for half precision conversion
+uint16_t float_to_half(float f) {
+    // Simple float to half conversion (not optimized)
+    union { float f; uint32_t i; } u = { f };
+    uint32_t i = u.i;
+    int s = (i >> 31) & 0x1;
+    int e = ((i >> 23) & 0xff) - 127 + 15;
+    int m = i & 0x7fffff;
+
+    if (e <= 0) return s << 15;
+    if (e >= 31) return (s << 15) | 0x7c00;
+
+    return (s << 15) | (e << 10) | (m >> 13);
+}
+
+float half_to_float(uint16_t h) {
+    // Simple half to float conversion (not optimized)
+    int s = (h >> 15) & 0x1;
+    int e = (h >> 10) & 0x1f;
+    int m = h & 0x3ff;
+
+    if (e == 0) {
+        if (m == 0) return s ? -0.0f : 0.0f;
+        // Denormalized
+        float f = m / 1024.0f;
+        return s ? -f : f;
+    }
+
+    if (e == 31) {
+        if (m == 0) return s ? -INFINITY : INFINITY;
+        return NAN;
+    }
+
+    float f = (1.0f + m / 1024.0f) * std::pow(2.0f, e - 15);
+    return s ? -f : f;
+}
+
 // Static instance for kernel dispatcher
 CpuKernelInterface CpuKernelDispatcher::kernel_impl_;
 
@@ -406,46 +443,7 @@ void CpuKernelInterface::silu_mul_linear(void* output, const void* gate_input,
     throw std::runtime_error("CPU SiLU mul linear not yet implemented");
 }
 
-// Forward declaration of helper functions
-uint16_t float_to_half(float f);
-float half_to_float(uint16_t h);
-
-// Helper functions for half precision conversion
-uint16_t float_to_half(float f) {
-    // Simple float to half conversion (not optimized)
-    union { float f; uint32_t i; } u = { f };
-    uint32_t i = u.i;
-    int s = (i >> 31) & 0x1;
-    int e = ((i >> 23) & 0xff) - 127 + 15;
-    int m = i & 0x7fffff;
-
-    if (e <= 0) return s << 15;
-    if (e >= 31) return (s << 15) | 0x7c00;
-
-    return (s << 15) | (e << 10) | (m >> 13);
-}
-
-float half_to_float(uint16_t h) {
-    // Simple half to float conversion (not optimized)
-    int s = (h >> 15) & 0x1;
-    int e = (h >> 10) & 0x1f;
-    int m = h & 0x3ff;
-
-    if (e == 0) {
-        if (m == 0) return s ? -0.0f : 0.0f;
-        // Denormalized
-        float f = m / 1024.0f;
-        return s ? -f : f;
-    }
-
-    if (e == 31) {
-        if (m == 0) return s ? -INFINITY : INFINITY;
-        return NAN;
-    }
-
-    float f = (1.0f + m / 1024.0f) * std::pow(2.0f, e - 15);
-    return s ? -f : f;
-}
+// (Half precision functions already defined above)
 
 // Kernel dispatcher implementation
 void CpuKernelDispatcher::execute(const std::string& kernel_name,

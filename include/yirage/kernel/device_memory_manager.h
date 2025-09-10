@@ -18,7 +18,13 @@
 #include "yirage/kernel/customized.h"
 #include "yirage/kernel/matmul.h"
 #include "yirage/kernel/operator.h"
+
+#ifdef YIRAGE_CPU_ONLY
+#include "yirage/cpu/cpu_compatibility.h"
+#else
 #include <cuda_runtime.h>
+#endif
+
 #include <unordered_map>
 #include <vector>
 
@@ -43,6 +49,20 @@ public:
   yirage::type::FPType *div_q_lookup_table;
   yirage::type::FPType *sqrt_p_lookup_table;
   yirage::type::FPType *sqrt_q_lookup_table;
+
+#ifdef YIRAGE_CPU_ONLY
+private:
+  // CPU-specific methods
+  void initialize_cpu_lookup_tables();
+  void initialize_cpu_memory_pools();
+  void cleanup_cpu_resources();
+#else
+private:
+  // CUDA-specific methods
+  void initialize_cuda_lookup_tables();
+  void initialize_cuda_memory_pools();
+  void cleanup_cuda_resources();
+#endif
   // fields for managing the preallocated cuda buffer
   // Note that data_base_ptr[i]
   // points to buffers on the i-th GPU,

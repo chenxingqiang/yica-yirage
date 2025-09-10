@@ -3,7 +3,18 @@
 #include <algorithm>
 #include <unordered_set>
 #include <vector>
+
+#ifdef YIRAGE_CPU_ONLY
+// CPU-only: define basic vector types if not already defined
+#ifndef YIRAGE_CPU_TYPES_DEFINED
+#define YIRAGE_CPU_TYPES_DEFINED
+struct int3 { int x, y, z; };
+struct int2 { int x, y; };
+struct dim3 { unsigned int x, y, z; };
+#endif
+#else
 #include <vector_types.h>
+#endif
 
 template <typename Container>
 typename Container::const_iterator

@@ -1,4 +1,4 @@
-import yirage as mi
+import yirage as yr
 import torch
 import flashinfer
 

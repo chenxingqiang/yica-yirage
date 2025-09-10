@@ -1,4 +1,4 @@
-import yirage as mi
+import yirage as yr
 from flash_attn import flash_attn_qkvpacked_func, flash_attn_func
 import numpy as np
 import torch

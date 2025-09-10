@@ -1,5 +1,5 @@
 import torch
-import yirage as mi
+import yirage as yr
 import argparse
 
 if __name__ == "__main__":

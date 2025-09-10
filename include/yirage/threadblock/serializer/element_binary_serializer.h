@@ -15,7 +15,12 @@
 
 #pragma once
 
+#ifdef YIRAGE_CPU_ONLY
+// CPU-only: use basic vector types from utils/containers.h
+#include "yirage/utils/containers.h"
+#else
 #include <vector_types.h>
+#endif
 
 namespace yirage {
 namespace threadblock {

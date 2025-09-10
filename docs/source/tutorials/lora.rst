@@ -16,7 +16,7 @@ The following code snippet demonstrates superoptimizing LoRA adapters in YiRage.
 
 .. code-block:: Python
 
-   import yirage as mi
+   import yirage as yr
    graph = yr.new_kernel_graph()
    X = graph.new_input(dims=(16, 256), dtype=yr.float16)
    W = graph.new_input(dims=(256, 4096), dtype=yr.float16)

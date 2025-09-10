@@ -1,8 +1,86 @@
 [build-system]
 requires = [
     "setuptools>=49.4.0", 
+    "wheel>=0.37.0",
     "cmake>=3.24",
     "cython>=0.28",
-    "z3-solver",
-    "graphviz"
+    "z3-solver==4.15",
+    "graphviz",
+    "pybind11>=2.6.0"
 ]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yica-yirage"
+version = "0.3.2"
+description = "YiRage: A Multi-Level Superoptimizer for Tensor Algebra with Multi-Backend Support"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "YICA Team", email = "team@yica.ai"}
+]
+maintainers = [
+    {name = "YICA Team", email = "team@yica.ai"}
+]
+keywords = ["tensor", "compiler", "optimization", "llm", "inference", "cuda", "cpu", "mps", "llvm"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS :: MacOS X",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: C++",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Compilers",
+    "Topic :: System :: Hardware",
+]
+requires-python = ">=3.9"
+dependencies = [
+    "cmake>=3.24",
+    "cython>=0.28",
+    "z3-solver==4.15",
+    "torch>=2.4",
+    "accelerate==1.8.0",
+    "numpy>=1.21.0",
+    "graphviz",
+    "tqdm",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0",
+    "pytest-cov",
+    "black",
+    "flake8",
+    "mypy",
+    "pre-commit",
+]
+docs = [
+    "sphinx>=4.0",
+    "sphinx-rtd-theme",
+    "myst-parser",
+]
+llvm = [
+    "llvmlite>=0.40.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/chenxingqiang/yica-yirage"
+Repository = "https://github.com/chenxingqiang/yica-yirage"
+Documentation = "https://yica-yirage.readthedocs.io"
+"Bug Tracker" = "https://github.com/chenxingqiang/yica-yirage/issues"
+
+[tool.setuptools]
+package-dir = {"" = "python"}
+
+[tool.setuptools.packages.find]
+where = ["python"]
+
+[tool.setuptools.package-data]
+"yirage" = ["*.so", "*.dylib", "include/**/*"]

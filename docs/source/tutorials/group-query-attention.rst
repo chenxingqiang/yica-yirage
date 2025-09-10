@@ -12,7 +12,7 @@ First, we define the computation graph for GQA, which takes three input tensors 
 
 .. code-block:: Python
 
-    import yirage as mi
+    import yirage as yr
     graph = yr.new_kernel_graph()
     Q = graph.new_input(dims=(2, 256, 64), dtype=yr.float16)
     K = graph.new_input(dims=(2, 64, 4096), dtype=yr.float16)

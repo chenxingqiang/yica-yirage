@@ -11,20 +11,21 @@ class TBGraph:
         input_map: tuple,
         forloop_dim: int,
         store_in_dmem: bool = False,
+        name: str = None,
     ):
-        return self.cygraph.new_input(dtensor, input_map, forloop_dim, store_in_dmem)
+        return self.cygraph.new_input(dtensor, input_map, forloop_dim, store_in_dmem, name)
 
-    def new_output(self, stensor: STensor, output_map: tuple, forloop_dim: int = -1):
+    def new_output(self, stensor: STensor, output_map: tuple, forloop_dim: int = -1, name: str = None):
         return self.cygraph.new_output(stensor, output_map, forloop_dim)
 
-    def matmul(self, A: STensor, B: STensor):
-        return self.cygraph.matmul(A, B)
+    def matmul(self, A: STensor, B: STensor, name: str = None):
+        return self.cygraph.matmul(A, B, name)
 
     def exp(self, A: STensor):
         return self.cygraph.exp(A)
 
-    def silu(self, A: STensor):
-        return self.cygraph.silu(A)
+    def silu(self, A: STensor, name: str = None):
+        return self.cygraph.silu(A, name)
 
     def gelu(self, A: STensor):
         return self.cygraph.gelu(A)
@@ -47,8 +48,8 @@ class TBGraph:
     def add(self, A: STensor, B: STensor):
         return self.cygraph.add(A, B)
 
-    def mul(self, A: STensor, B: STensor):
-        return self.cygraph.mul(A, B)
+    def mul(self, A: STensor, B: STensor, name: str = None):
+        return self.cygraph.mul(A, B, name)
 
     def div(self, A: STensor, B: STensor):
         return self.cygraph.div(A, B)

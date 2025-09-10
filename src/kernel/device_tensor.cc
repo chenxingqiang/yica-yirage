@@ -16,6 +16,13 @@
 #include "yirage/kernel/device_tensor.h"
 #include "yirage/kernel/device_memory_manager.h"
 #include "yirage/utils/hash_utils.h"
+
+#ifdef YIRAGE_CPU_ONLY
+#include "yirage/cpu/cpu_compatibility.h"
+#else
+#include "yirage/utils/cuda_helper.h"
+#endif
+
 #include <functional>
 
 namespace yirage {

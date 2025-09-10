@@ -158,7 +158,7 @@ if __name__ == "__main__":
     step = torch.tensor([0], dtype=torch.int32, device="cuda")
     num_new_tokens = torch.tensor([1], dtype=torch.int32, device="cuda")
     if args.use_yirage:
-        import yirage as mi
+        import yirage as yr
 
         batch_size = 1
         hidden_size = model.config.hidden_size

@@ -149,6 +149,11 @@ def get_available_backends() -> List[BackendType]:
     return _backend_config.get_available_backends()
 
 
+def get_current_backend() -> BackendType:
+    """Get the currently active backend."""
+    return _backend_config.get_backend()
+
+
 def is_backend_available(backend: BackendType) -> bool:
     """Check if a backend is available."""
     return _backend_config.is_backend_available(backend)

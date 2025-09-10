@@ -52,7 +52,7 @@ def load_model_and_tokenizer(rank):
 
 def build_yirage_graph(model, world_size, rank, args, tokens_tensor, step_tensor):
     print("Building YiRage execution graph...")
-    import yirage as mi
+    import yirage as yr
 
     # --- Model Configuration ---
     batch_size = 1

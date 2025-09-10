@@ -46,7 +46,7 @@ python demo/qwen3/demo.py --use-yirage --profiling
 ## How MPK Works
 Once you've imported the YiRage package, you can instantiate a persistent kernel using the following API:
 ```python
-import yirage as mi
+import yirage as yr
 mpk = yr.PersistentKernel(
     world_size=world_size,
     mpi_rank=rank,

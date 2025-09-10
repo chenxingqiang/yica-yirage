@@ -64,7 +64,7 @@ You could then use `generate_triton_program()["code"]` to get the triton code an
 Here's a simple example of using the Triton transpiler, which you could find as `demo/triton_rms_norm.py`:
 
 ```python
-import yirage as mi
+import yirage as yr
 import torch
 
 # Create a kernel graph
