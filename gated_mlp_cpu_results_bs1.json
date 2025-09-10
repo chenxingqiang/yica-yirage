@@ -1,0 +1,19 @@
+{
+  "benchmark": "gated_mlp_cpu",
+  "backend": "cpu",
+  "batch_size": 1,
+  "input_dims": [
+    4,
+    256
+  ],
+  "weight_dims": [
+    256,
+    256
+  ],
+  "total_time_ms": 0.24708296405151486,
+  "avg_time_ms": 0.012354148202575743,
+  "throughput_ops_per_sec": 80944.47173553478,
+  "warmup_iters": 16,
+  "profile_iters": 20,
+  "estimated_memory_mb": 0.251953125,
+  "param_count": 

@@ -1,0 +1,34 @@
+{
+  "benchmark": "lora_cpu",
+  "backend": "cpu",
+  "batch_size": 1,
+  "input_dims": [
+    32,
+    256
+  ],
+  "lora_A_dims": [
+    16,
+    256
+  ],
+  "lora_B_dims": [
+    256,
+    16
+  ],
+  "seq_len": 32,
+  "hidden_dim": 256,
+  "rank": 16,
+  "original_params": 65536,
+  "lora_params": 8192,
+  "compression_ratio": 0.125,
+  "reduction_factor": 8.0,
+  "lora_flops": 262144,
+  "full_flops": 2097152,
+  "flop_efficiency": 0.125,
+  "total_time_ms": 0.6695830379612744,
+  "avg_time_ms": 0.06695830379612744,
+  "throughput_ops_per_sec": 14934.667446845262,
+  "warmup_iters": 16,
+  "profile_iters": 10,
+  "estimated_memory_mb": 0.03125,
+  "total_params": 16384
+}

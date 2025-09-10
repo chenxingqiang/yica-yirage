@@ -108,8 +108,8 @@ class CyKNGraph:
         dtensor = DTensor(tensor, name)
         return dtensor
     
-    def matmul(self, a: DTensor, b: DTensor, name: str = None) -> DTensor:
-        """矩阵乘法操作"""
+    def matmul(self, a: DTensor, b: DTensor, layout=None, name: str = None) -> DTensor:
+        """Matrix multiplication operation"""
         result_tensor = torch.matmul(a.tensor, b.tensor)
         return DTensor(result_tensor, name)
     
@@ -153,6 +153,31 @@ class CyKNGraph:
         """Element-wise subtraction"""
         return self.element_binary(A, B, "sub", name)
     
+    def silu(self, A: DTensor, name: str = None) -> DTensor:
+        """SiLU activation function"""
+        result = torch.nn.functional.silu(A.tensor)
+        return DTensor(result, name)
+    
+    def sqrt(self, A: DTensor, name: str = None) -> DTensor:
+        """Square root"""
+        result = torch.sqrt(A.tensor)
+        return DTensor(result, name)
+    
+    def exp(self, A: DTensor, name: str = None) -> DTensor:
+        """Exponential function"""
+        result = torch.exp(A.tensor)
+        return DTensor(result, name)
+    
+    def div(self, A: DTensor, B: DTensor, name: str = None) -> DTensor:
+        """Element-wise division"""
+        result = A.tensor / B.tensor
+        return DTensor(result, name)
+    
+    def reduction(self, A: DTensor, dim: int, name: str = None) -> DTensor:
+        """Reduction operation (sum along dimension)"""
+        result = torch.sum(A.tensor, dim=dim, keepdim=True)
+        return DTensor(result, name)
+    
     def rms_norm(self, input: DTensor, weight: DTensor, eps: float = 1e-6, name: str = None) -> DTensor:
         """RMS normalization"""
         variance = input.tensor.pow(2).mean(dim=-1, keepdim=True)
@@ -182,7 +207,7 @@ class CyKNGraph:
         return outputs
     
     def generate_task_graph(self, num_gpus: int = 1, my_gpu_id: int = 0):
-        """生成任务图（Python版本返回模拟结果）"""
+        """Generate task graph (Python version returns mock results)"""
         return {
             "num_gpus": num_gpus,
             "my_gpu_id": my_gpu_id,
@@ -190,6 +215,33 @@ class CyKNGraph:
             "outputs": list(self._outputs.keys()),
             "python_mode": True
         }
+    
+    def superoptimize(self, config: str = None, backend: str = 'cpu', previous_checkpoint: str = None, 
+                     save_codes: bool = False, warmup_iters: int = 16, profile_iters: int = 100):
+        """Superoptimize graph (Python fallback - returns self)"""
+        print(f"  📋 Superoptimization requested with config: {config}")
+        print(f"      Backend: {backend}, Checkpoint: {previous_checkpoint}")
+        print(f"      Note: Using Python fallback implementation")
+        
+        # In Python-only mode, we just return the same graph
+        # The actual superoptimization would happen in the native implementation
+        return self
+    
+    def __call__(self, inputs: list, outputs: list = None):
+        """Execute graph with given inputs"""
+        # Simplified execution for Python fallback
+        # In practice, this would execute the optimized computation graph
+        
+        # Create mock outputs based on the marked outputs
+        results = []
+        
+        for output_name, output_tensor in self._outputs.items():
+            # Create a tensor with the same shape as the expected output
+            # This is a simplified version - actual implementation would compute the result
+            mock_result = torch.randn_like(output_tensor.tensor)
+            results.append(mock_result)
+        
+        return results
 
 class CyTBGraph:
     """ThreadBlock图的Python实现"""

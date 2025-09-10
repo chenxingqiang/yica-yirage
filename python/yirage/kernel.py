@@ -237,8 +237,8 @@ class KNGraph:
     def mark_output(self, A: DTensor, strides: tuple = None, name: str = None):
         return self.cygraph.mark_output(A, strides, name)
 
-    def matmul(self, A: DTensor, B: DTensor) -> DTensor:
-        return self.cygraph.matmul(A, B)
+    def matmul(self, A: DTensor, B: DTensor, name: str = None) -> DTensor:
+        return self.cygraph.matmul(A, B, name)
 
     def reduction(self, A: DTensor, dim: int):
         return self.cygraph.reduction(A, dim)
