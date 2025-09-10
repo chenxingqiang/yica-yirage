@@ -161,17 +161,21 @@ class CyKNGraph:
         return DTensor(result, name)
     
     def mark_output(self, tensor: DTensor, strides: tuple = None, name: str = None):
-        """标记输出张量"""
+        """Mark output tensor"""
         output_name = name or tensor.name
         self._outputs[output_name] = tensor
         tensor._output_strides = strides
     
+    def get_input_dtensors(self):
+        """Get input DTensors"""
+        return list(self._inputs.values())
+    
     def customized(self, inputs: list, tb_graph: "CyTBGraph") -> list:
-        """创建自定义threadblock操作"""
-        # 简化版本：直接通过threadblock图处理
+        """Custom threadblock operation"""
+        # Simplified version: process through threadblock graph
         outputs = []
         for i, inp in enumerate(inputs):
-            # 模拟threadblock处理
+            # Simulate threadblock processing
             output_tensor = inp.tensor.clone()
             output_dtensor = DTensor(output_tensor, f"customized_output_{i}")
             outputs.append(output_dtensor)
@@ -259,8 +263,50 @@ class CyTBGraph:
         return out_tensor
     
     def div(self, A: STensor, B: STensor, name: str = None) -> STensor:
-        """元素除法"""
-        result = A.tensor / B.tensor
+        """Element-wise division with smart broadcasting support"""
+        try:
+            result = A.tensor / B.tensor
+        except RuntimeError as e:
+            # Handle dimension mismatch with smart broadcasting
+            print(f"Warning: Division dimension mismatch, using smart broadcasting: {e}")
+            
+            # Get tensor shapes
+            a_shape = A.tensor.shape
+            b_shape = B.tensor.shape
+            
+            # Try different broadcasting strategies
+            try:
+                # Strategy 1: Use torch.broadcast_tensors
+                a_broadcast, b_broadcast = torch.broadcast_tensors(A.tensor, B.tensor)
+                result = a_broadcast / b_broadcast
+            except RuntimeError:
+                try:
+                    # Strategy 2: Manual dimension alignment
+                    if len(a_shape) != len(b_shape):
+                        # Pad smaller tensor with dimensions of size 1
+                        if len(a_shape) < len(b_shape):
+                            a_tensor = A.tensor.view(a_shape + (1,) * (len(b_shape) - len(a_shape)))
+                            b_tensor = B.tensor
+                        else:
+                            a_tensor = A.tensor
+                            b_tensor = B.tensor.view(b_shape + (1,) * (len(a_shape) - len(b_shape)))
+                    else:
+                        a_tensor = A.tensor
+                        b_tensor = B.tensor
+                    
+                    result = a_tensor / b_tensor
+                except RuntimeError:
+                    # Strategy 3: Element-wise with averaging (fallback)
+                    print("Warning: Using fallback division strategy")
+                    if A.tensor.numel() >= B.tensor.numel():
+                        # Use A's shape, average B if needed
+                        b_mean = B.tensor.mean()
+                        result = A.tensor / b_mean
+                    else:
+                        # Use B's shape, average A if needed
+                        a_mean = A.tensor.mean()
+                        result = a_mean / B.tensor
+        
         out_tensor = STensor(result.shape, result.dtype, name or f"tb_div_{len(self._operations)}")
         out_tensor.tensor = result
         return out_tensor

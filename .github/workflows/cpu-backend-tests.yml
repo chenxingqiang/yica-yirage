@@ -60,10 +60,13 @@ jobs:
       run: |
         python test_production_ready.py
         
-    - name: Run official tensor program tests (Python-only)
+    - name: Run CPU-specific test suite
       run: |
-        cd python
-        python -m pytest ../tests/python/test_tensor_program.py -v --tb=short || echo "Some tests may fail in CPU-only mode - expected"
+        python tests/cpu/run_cpu_tests.py
+        
+    - name: Run CPU tests with pytest
+      run: |
+        python -m pytest tests/cpu/ -v --tb=short
         
     - name: Test multi-backend switching
       run: |
